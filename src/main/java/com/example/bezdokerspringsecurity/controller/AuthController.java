@@ -18,16 +18,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.bezdokerspringsecurity.exception.TokenRefreshException;
 import com.example.bezdokerspringsecurity.model.ERole;
+import com.example.bezdokerspringsecurity.model.RefreshToken;
 import com.example.bezdokerspringsecurity.model.Role;
 import com.example.bezdokerspringsecurity.model.User;
 import com.example.bezdokerspringsecurity.repository.RoleRepository;
 import com.example.bezdokerspringsecurity.repository.UserRepository;
 import com.example.bezdokerspringsecurity.request.LoginRequest;
 import com.example.bezdokerspringsecurity.request.SignupRequest;
+import com.example.bezdokerspringsecurity.request.TokenRefreshRequest;
 import com.example.bezdokerspringsecurity.response.JwtResponse;
 import com.example.bezdokerspringsecurity.response.MessageResponse;
+import com.example.bezdokerspringsecurity.response.TokenRefreshResponse;
 import com.example.bezdokerspringsecurity.security.jwt.JwtUtils;
+import com.example.bezdokerspringsecurity.security.service.RefreshTokenService;
 import com.example.bezdokerspringsecurity.security.service.UserDetailsImpl;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
@@ -49,27 +54,28 @@ public class AuthController {
 
 	@Autowired
 	JwtUtils jwtUtils;
+	
+	@Autowired
+	RefreshTokenService refreshTokenService;
 
 	@PostMapping("/signin")
-	  public ResponseEntity<?> authenticateUser(@RequestBody LoginRequest loginRequest) {
+	public ResponseEntity<?> authenticateUser(@RequestBody LoginRequest loginRequest) {
 
-	    Authentication authentication = authenticationManager.authenticate(
-	        new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+		Authentication authentication = authenticationManager.authenticate(
+				new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
 
-	    SecurityContextHolder.getContext().setAuthentication(authentication);
-	    String jwt = jwtUtils.generateJwtToken(authentication);
-	    
-	    UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();    
-	    List<String> roles = userDetails.getAuthorities().stream()
-	        .map(item -> item.getAuthority())
-	        .collect(Collectors.toList());
+		SecurityContextHolder.getContext().setAuthentication(authentication);
+		String jwt = jwtUtils.generateJwtToken(authentication);
 
-	    return ResponseEntity.ok(new JwtResponse(jwt, 
-	                         userDetails.getId(), 
-	                         userDetails.getUsername(), 
-	                         userDetails.getEmail(), 
-	                         roles));
-	  }
+		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+		List<String> roles = userDetails.getAuthorities().stream().map(item -> item.getAuthority())
+				.collect(Collectors.toList());
+
+		RefreshToken refreshToken = refreshTokenService.createRefreshToken(userDetails.getId());
+
+		return ResponseEntity.ok(new JwtResponse(jwt, refreshToken.getToken(), userDetails.getId(),
+				userDetails.getUsername(), userDetails.getEmail(), roles));
+	}
 	
 	@PostMapping("/signup")
 	public ResponseEntity<?> registerUser(@RequestBody SignupRequest signUpRequest) {
@@ -116,5 +122,20 @@ public class AuthController {
 		user.setRoles(roles);
 		userRepository.save(user);
 		return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+	}
+	
+	@PostMapping("/refreshtoken")
+	public ResponseEntity<?> refreshtoken(@RequestBody TokenRefreshRequest request) {
+		
+		String requestRefreshToken = request.getRefreshToken();
+		
+		return refreshTokenService.findByToken(requestRefreshToken)
+				.map(refreshTokenService::verifyExpiration)
+				.map(RefreshToken::getUser)
+				.map(user -> {
+					String token = jwtUtils.generateTokenFromUsername(user.getUsername());
+					return ResponseEntity.ok(new TokenRefreshResponse(token, requestRefreshToken));
+				})
+				.orElseThrow(() -> new TokenRefreshException(requestRefreshToken, "Refresh token is not in database"));
 	}
 }
