@@ -1,5 +1,6 @@
 package com.example.bezdokerspringsecurity.model;
 
+
 import java.time.Instant;
 
 import javax.persistence.Column;
@@ -69,3 +70,4 @@ public class RefreshToken {
 	}
 	
 }
+

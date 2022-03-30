@@ -2,6 +2,8 @@ package com.example.bezdokerspringsecurity.response;
 
 import java.util.List;
 
+import java.util.List;
+
 public class JwtResponse {
 
 	private String token;
